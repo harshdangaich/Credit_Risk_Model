@@ -2,15 +2,29 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    _env_path = Path(__file__).resolve().parents[1] / '.env'
+    if _env_path.exists():
+        load_dotenv(dotenv_path=_env_path)
+except ImportError:
+    pass
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.logging_middleware import AuditLoggingMiddleware
 from api.model_loader import load_state, model_version
 from api.routers import audit as audit_router
+from api.routers import experiments as experiments_router
+from api.routers import workflow_studio as workflow_studio_router
 from api.schemas import PredictRequest, PredictResponse
 from api.security import require_predict_token, safe_identifier
 from credit_risk_model.config import get_settings
@@ -31,8 +45,17 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Credit Risk Model Validation Platform", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(AuditLoggingMiddleware)
 app.include_router(audit_router.router)
+app.include_router(experiments_router.router)
+app.include_router(workflow_studio_router.router)
 
 
 def _request_id(request: Request) -> str | None:
@@ -116,7 +139,15 @@ def predict(payload: PredictRequest, request: Request):
     if not state.loaded:
         raise HTTPException(status_code=503, detail="Model unavailable: " + state.reason)
     try:
-        pd_value = float(state.model.predict_proba(payload.features)[0])
+        if hasattr(state.model, "specs"):
+            pd_value = float(state.model.predict_proba(payload.features)[0])
+        else:
+            import pandas as pd
+
+            from credit_risk_model.models import predict_pd
+
+            df = pd.DataFrame([payload.features])
+            pd_value = float(predict_pd(state.model, df)[0])
     except FeatureContractError as exc:
         raise HTTPException(status_code=422, detail={"feature_errors": exc.issues}) from exc
     score = int(probability_to_score(pd_value))

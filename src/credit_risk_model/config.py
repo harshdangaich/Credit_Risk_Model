@@ -15,7 +15,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PATH_FIELDS = ("governance_dir", "inventory_path", "audit_trail_dir", "pma_register_path",
-               "artifacts_dir", "reports_dir", "model_path")
+               "artifacts_dir", "reports_dir", "model_path", "experiments_dir")
 
 
 def project_root() -> Path:
@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     pma_register_path: Path = Path("governance/pma_log.csv")
     artifacts_dir: Path = Path("artifacts")
     reports_dir: Path = Path("reports")
+    experiments_dir: Path = Path("artifacts/experiments")
     # Champion artefact. Empty means "use the inventory artifact_path".
     model_path: Path | None = None
     # Optional SHA-256 of the champion artefact; loading is refused on mismatch.
@@ -90,6 +91,7 @@ class Settings(BaseSettings):
             self.audit_trail_dir / "monitoring",
             self.artifacts_dir,
             self.reports_dir,
+            self.experiments_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 
